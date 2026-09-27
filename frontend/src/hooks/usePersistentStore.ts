@@ -1,22 +1,23 @@
 import { useStore } from 'zustand'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import Dexie, { type Table } from 'dexie'
-import type { BeeColony, DropPoint, Orchard, TransitRoute } from '@/types'
+import type { BeeColony, DropPoint, Orchard, PollinationShift, TransitRoute } from '@/types'
 
 /** IndexedDB 数据结构版本号 */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MetaRow {
   key: string
   value: number
 }
 
-/** Dexie 封装：果园 / 蜂群 / 投放点 / 转场路线 四张表 + 元数据表 */
+/** Dexie 封装：果园 / 蜂群 / 投放点 / 转场路线 / 授粉班次 五张表 + 元数据表 */
 class BeeRouteDb extends Dexie {
   orchards!: Table<Orchard, string>
   colonies!: Table<BeeColony, string>
   dropPoints!: Table<DropPoint, string>
   routes!: Table<TransitRoute, string>
+  shifts!: Table<PollinationShift, string>
   meta!: Table<MetaRow, string>
 
   constructor() {
@@ -29,7 +30,7 @@ class BeeRouteDb extends Dexie {
       meta: 'key'
     })
     // v2：投放点新增「可容纳箱数」字段，迁移时为历史投放点补齐（按 8 箱兜底）
-    this.version(SCHEMA_VERSION)
+    this.version(2)
       .stores({
         orchards: 'id, name, crop, bloomStart',
         colonies: 'id, code, status, currentOrchardId',
@@ -47,6 +48,15 @@ class BeeRouteDb extends Dexie {
             }
           })
       })
+    // v3：新增授粉班次表；路线段增加 shiftId 索引，用于班次重排时同步回收
+    this.version(SCHEMA_VERSION).stores({
+      orchards: 'id, name, crop, bloomStart',
+      colonies: 'id, code, status, currentOrchardId',
+      dropPoints: 'id, orchardId, code, dropWindow',
+      routes: 'id, fromDropId, toDropId, departAt, shiftId',
+      shifts: 'id, workDate',
+      meta: 'key'
+    })
   }
 }
 
@@ -173,7 +183,22 @@ export async function seedDemoData(): Promise<void> {
       status: '待投放',
       lastCheckDate: `${year}-04-02`,
       healthNote: '新分群，群势偏弱'
-    }
+    },
+    ...Array.from({ length: 27 }, (_, index) => {
+      const no = index + 4
+      const species = no % 3 === 0 ? ('中蜂' as const) : ('意蜂' as const)
+      return {
+        id: `col_${String(no).padStart(3, '0')}`,
+        code: `Q-${String(no).padStart(2, '0')}`,
+        species,
+        strengthFrames: 4 + ((no * 2) % 6),
+        boxType: no % 4 === 0 ? ('平箱' as const) : ('标准继箱' as const),
+        currentOrchardId: '',
+        status: '待投放' as const,
+        lastCheckDate: `${year}-04-${String(6 + (no % 9)).padStart(2, '0')}`,
+        healthNote: ''
+      }
+    })
   ])
 
   await db.dropPoints.bulkPut([
@@ -187,9 +212,23 @@ export async function seedDemoData(): Promise<void> {
       shade: '北侧有防风林，午后半阴',
       waterDistance: 220,
       dropWindow: `${year}-04-07`,
-      withdrawTime: `${year}-04-19`,
+      withdrawTime: `${year}-04-18`,
       owner: '周园主',
       colonyCodes: ['Q-01']
+    },
+    {
+      id: 'dp_a02',
+      orchardId: 'orc_ap',
+      longitude: 107.4162,
+      latitude: 34.6105,
+      code: 'A-02',
+      capacityBoxes: 6,
+      shade: '行间生草，无遮挡',
+      waterDistance: 310,
+      dropWindow: `${year}-04-07`,
+      withdrawTime: `${year}-04-18`,
+      owner: '周园主',
+      colonyCodes: []
     },
     {
       id: 'dp_b01',
@@ -204,6 +243,20 @@ export async function seedDemoData(): Promise<void> {
       withdrawTime: `${year}-04-13`,
       owner: '合作社',
       colonyCodes: ['Q-02']
+    },
+    {
+      id: 'dp_b02',
+      orchardId: 'orc_rape',
+      longitude: 107.4649,
+      latitude: 34.6458,
+      code: 'B-02',
+      capacityBoxes: 4,
+      shade: '沟渠边有杨树遮阴',
+      waterDistance: 160,
+      dropWindow: `${year}-03-27`,
+      withdrawTime: `${year}-04-12`,
+      owner: '合作社',
+      colonyCodes: []
     },
     {
       id: 'dp_c01',

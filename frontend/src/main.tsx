@@ -9,6 +9,7 @@ import { orchardStore } from '@/stores/orchardStore'
 import { colonyStore } from '@/stores/colonyStore'
 import { droppointStore } from '@/stores/droppointStore'
 import { routeStore } from '@/stores/routeStore'
+import { shiftStore } from '@/stores/shiftStore'
 import '@/styles/index.css'
 
 /** 启动：写入示例数据（仅首次）→ 记录 schemaVersion → 从 IndexedDB 水合全部 store */
@@ -19,6 +20,7 @@ async function bootstrap(): Promise<void> {
   await colonyStore.getState().hydrate()
   await droppointStore.getState().hydrate()
   await routeStore.getState().hydrate()
+  await shiftStore.getState().hydrate()
 }
 
 void bootstrap()

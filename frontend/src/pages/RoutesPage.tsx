@@ -29,6 +29,16 @@ export default function RoutesPage(): JSX.Element {
 
   const legs = useMemo(() => routeLegs(ordered.map((item) => ({ longitude: item.longitude, latitude: item.latitude }))), [ordered])
 
+  /** 各站预计到达时刻：首站 = 首段出发时刻，之后逐段累加耗时 */
+  const arrivals = useMemo(() => {
+    const start = departAt.valueOf()
+    let cursor = start
+    return ordered.map((_, index) => {
+      if (index > 0) cursor += Math.round(estimateDurationH(legs.legs[index - 1]) * 3600000)
+      return dayjs(cursor)
+    })
+  }, [ordered, legs.legs, departAt])
+
   function orchardName(orchardId: string): string {
     return orchards.find((item) => item.id === orchardId)?.name ?? '未知地块'
   }
@@ -153,6 +163,9 @@ export default function RoutesPage(): JSX.Element {
                     <Tag color="gold">第 {index + 1} 站</Tag>
                     <span style={{ flex: 1 }}>
                       {point.code} · {orchardName(point.orchardId)}
+                      <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                        预计到 {arrivals[index].format('MM-DD HH:mm')}
+                      </Typography.Text>
                       {index > 0 ? (
                         <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
                           上一段 {distanceKm(ordered[index - 1], point)} km / 约 {estimateDurationH(distanceKm(ordered[index - 1], point))} h
@@ -218,9 +231,24 @@ export default function RoutesPage(): JSX.Element {
               }
             },
             { title: '里程（km）', dataIndex: 'distanceKm', key: 'km', width: 110 },
-            { title: '预计耗时（h）', dataIndex: 'durationH', key: 'hour', width: 130 },
-            { title: '车辆', dataIndex: 'vehicleType', key: 'vehicle', width: 110 },
-            { title: '出发时刻', dataIndex: 'departAt', key: 'depart', width: 160 },
+            { title: '预计耗时（h）', dataIndex: 'durationH', key: 'hour', width: 120 },
+            {
+              title: '预计到达',
+              key: 'eta',
+              width: 130,
+              render: (_, record: TransitRoute) => {
+                const arrive = dayjs(record.departAt).add(record.durationH, 'hour')
+                return arrive.isValid() ? arrive.format('MM-DD HH:mm') : '—'
+              }
+            },
+            { title: '车辆', dataIndex: 'vehicleType', key: 'vehicle', width: 100 },
+            { title: '出发时刻', dataIndex: 'departAt', key: 'depart', width: 150, render: (value: string) => value.replace('T', ' ') },
+            {
+              title: '来源',
+              key: 'source',
+              width: 100,
+              render: (_, record: TransitRoute) => (record.shiftId ? <Tag color="blue">授粉班次</Tag> : <Tag>人工规划</Tag>)
+            },
             { title: '风险备注', dataIndex: 'riskNote', key: 'risk', render: (value: string) => value || '—' },
             { title: '实际记录', dataIndex: 'actualNote', key: 'actual', width: 120 },
             {
@@ -228,7 +256,18 @@ export default function RoutesPage(): JSX.Element {
               key: 'action',
               width: 80,
               render: (_, record: TransitRoute) => (
-                <Button size="small" danger type="link" onClick={() => void routeStore.getState().remove(record.id)}>
+                <Button
+                  size="small"
+                  danger
+                  type="link"
+                  onClick={() => {
+                    if (record.shiftId) {
+                      message.info('该段由授粉班次生成，请在总表拖动站点顺序来重算')
+                      return
+                    }
+                    void routeStore.getState().remove(record.id)
+                  }}
+                >
                   删除
                 </Button>
               )

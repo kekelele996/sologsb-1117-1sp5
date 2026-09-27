@@ -26,4 +26,9 @@ export interface BeeColony {
   lastCheckDate: string
   /** 蜂群健康备注 */
   healthNote: string
+  /** 当前被哪个授粉班次占用（班次重排时据此回退状态） */
+  lastShiftId?: string
+  /** 首次被班次接管前的状态快照（重排 / 删除班次时回退） */
+  snapStatus?: ColonyStatus
+  snapOrchardId?: string
 }

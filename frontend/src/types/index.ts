@@ -5,3 +5,14 @@ export type { BeeColony, BeeSpecies, ColonyStatus, BoxType } from './colony'
 export type { DropPoint } from './droppoint'
 export { VEHICLE_TYPES } from './route'
 export type { TransitRoute, VehicleType } from './route'
+export { SHIFT_BLOCK_REASONS, SHIFT_WARNING_REASONS } from './shift'
+export type {
+  PollinationShift,
+  ShiftTask,
+  ShiftStop,
+  ShiftLeg,
+  TaskBlock,
+  TaskWarning,
+  ShiftBlockReason,
+  ShiftWarningReason
+} from './shift'

@@ -1,15 +1,21 @@
 import { useMemo, useState } from 'react'
-import { Alert, Card, Col, Row, Segmented, Space, Table, Tag, Typography } from 'antd'
-import type { BeeColony, DropPoint, Orchard } from '@/types'
+import { Alert, Button, Card, Col, DatePicker, Form, Input, Modal, Row, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd'
+import dayjs from 'dayjs'
+import type { BeeColony, DropPoint, Orchard, VehicleType } from '@/types'
+import { VEHICLE_TYPES } from '@/types'
 import FlowerWindowBar from '@/components/common/FlowerWindowBar'
 import RouteMap from '@/components/common/RouteMap'
 import StatusTag from '@/components/common/StatusTag'
+import GenerateShiftModal from '@/components/schedule/GenerateShiftModal'
+import SavedShiftCard from '@/components/schedule/SavedShiftCard'
 import { usePersistentStore } from '@/hooks/usePersistentStore'
 import { orchardStore } from '@/stores/orchardStore'
 import { colonyStore } from '@/stores/colonyStore'
 import { droppointStore } from '@/stores/droppointStore'
 import { routeStore } from '@/stores/routeStore'
+import { shiftStore } from '@/stores/shiftStore'
 import { bloomDays, flowerWindowOverlap } from '@/utils/geo'
+import { buildShiftPlan, type ShiftDraft } from '@/utils/planning'
 import { suggestColonyBoxes } from '@/types'
 
 interface Placement {
@@ -33,31 +39,35 @@ interface ScheduleRow {
   orchard: Orchard
   days: number
   suggest: number
+  capacity: number
   placedCodes: string[]
   dropCodes: string[]
   conflicted: boolean
 }
 
-/** 季内授粉安排总表：日期条带展示花期与已投放群体，冲突处标红 */
+/** 季内授粉安排总表：生成可执行授粉班次，按班次展示经停投放点与箱数；冲突处标红 */
 export default function SchedulePage(): JSX.Element {
   const orchards = usePersistentStore(orchardStore, (state) => state.rows)
   const colonies = usePersistentStore(colonyStore, (state) => state.rows)
   const dropPoints = usePersistentStore(droppointStore, (state) => state.rows)
   const routes = usePersistentStore(routeStore, (state) => state.rows)
+  const shifts = usePersistentStore(shiftStore, (state) => state.rows)
   const [scope, setScope] = useState<'all' | 'conflict'>('all')
+
+  const [optionOpen, setOptionOpen] = useState(false)
+  const [vehicleType, setVehicleType] = useState<VehicleType>('厢式货车')
+  const [departAt, setDepartAt] = useState(dayjs().hour(6).minute(30).second(0))
+  const [riskNote, setRiskNote] = useState('')
+  const [drafts, setDrafts] = useState<ShiftDraft[]>([])
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   /** 由投放点的群号安排 + 蜂群当前所在地块，汇总出「某群在某地块」的时间占用 */
   const placements = useMemo<Placement[]>(() => {
     const list: Placement[] = []
     dropPoints.forEach((point: DropPoint) => {
       point.colonyCodes.forEach((code) => {
-        list.push({
-          colonyCode: code,
-          orchardId: point.orchardId,
-          dropCode: point.code,
-          start: point.dropWindow,
-          end: point.withdrawTime
-        })
+        list.push({ colonyCode: code, orchardId: point.orchardId, dropCode: point.code, start: point.dropWindow, end: point.withdrawTime })
       })
     })
     colonies.forEach((colony: BeeColony) => {
@@ -66,13 +76,7 @@ export default function SchedulePage(): JSX.Element {
       if (!orchard) return
       const already = list.some((item) => item.colonyCode === colony.code && item.orchardId === colony.currentOrchardId)
       if (already) return
-      list.push({
-        colonyCode: colony.code,
-        orchardId: colony.currentOrchardId,
-        dropCode: '（当前所在）',
-        start: orchard.bloomStart,
-        end: orchard.bloomEnd
-      })
+      list.push({ colonyCode: colony.code, orchardId: colony.currentOrchardId, dropCode: '（当前所在）', start: orchard.bloomStart, end: orchard.bloomEnd })
     })
     return list
   }, [dropPoints, colonies, orchards])
@@ -100,24 +104,57 @@ export default function SchedulePage(): JSX.Element {
     () =>
       orchards.map((orchard) => {
         const related = placements.filter((item) => item.orchardId === orchard.id)
+        const orchardDrops = dropPoints.filter((item) => item.orchardId === orchard.id)
         return {
           key: orchard.id,
           orchard,
           days: bloomDays(orchard),
           suggest: suggestColonyBoxes(orchard),
+          capacity: orchardDrops.reduce((sum, item) => sum + item.capacityBoxes, 0),
           placedCodes: Array.from(new Set(related.map((item) => item.colonyCode))),
           dropCodes: Array.from(new Set(related.map((item) => item.dropCode))),
           conflicted: conflicts.some((item) => item.a.orchardId === orchard.id || item.b.orchardId === orchard.id)
         }
       }),
-    [orchards, placements, conflicts]
+    [orchards, placements, conflicts, dropPoints]
   )
 
   const visibleRows = scope === 'conflict' ? rows.filter((row) => row.conflicted) : rows
   const totalSuggest = rows.reduce((sum, row) => sum + row.suggest, 0)
+  const totalCapacity = rows.reduce((sum, row) => sum + row.capacity, 0)
 
   function orchardName(id: string): string {
     return orchards.find((item) => item.id === id)?.name ?? '未知地块'
+  }
+
+  function openOptions(): void {
+    if (orchards.length === 0) {
+      message.warning('请先在果园地块管理中录入地块')
+      return
+    }
+    setOptionOpen(true)
+  }
+
+  function generatePlan(): void {
+    const plan = buildShiftPlan(orchards, dropPoints, colonies, {
+      vehicleType,
+      departAt: departAt.format('YYYY-MM-DDTHH:mm'),
+      riskNote: riskNote.trim()
+    })
+    setDrafts(plan)
+    setOptionOpen(false)
+    setPreviewOpen(true)
+  }
+
+  async function confirmPlan(): Promise<void> {
+    setSaving(true)
+    try {
+      await shiftStore.getState().savePlan(drafts)
+      setPreviewOpen(false)
+      message.success(`已保存 ${drafts.length} 个授粉班次，蜂群状态、投放点群号与转场路线已同步`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -126,18 +163,38 @@ export default function SchedulePage(): JSX.Element {
         <div>
           <h2 className="page-title">季内授粉安排总表</h2>
           <p className="page-sub">
-            按日期条带展示各地块盛花期与已投放群体；同一蜂群在同一天被排入花期重叠的两个地块时进入冲突列表并标红。
+            汇总地块建议箱数、投放点可容纳箱数与蜂群可用状态，一键生成可执行授粉班次；花期重叠占用、投放点超容、撤场晚于花期结束的任务会在班次里明确拦下。
           </p>
         </div>
-        <Segmented
-          value={scope}
-          onChange={(value) => setScope(value as 'all' | 'conflict')}
-          options={[
-            { label: `全部地块（${rows.length}）`, value: 'all' },
-            { label: `仅冲突地块（${rows.filter((row) => row.conflicted).length}）`, value: 'conflict' }
-          ]}
-        />
+        <Space>
+          <Segmented
+            value={scope}
+            onChange={(value) => setScope(value as 'all' | 'conflict')}
+            options={[
+              { label: `全部地块（${rows.length}）`, value: 'all' },
+              { label: `仅冲突地块（${rows.filter((row) => row.conflicted).length}）`, value: 'conflict' }
+            ]}
+          />
+          <Button type="primary" onClick={openOptions}>
+            生成授粉班次
+          </Button>
+        </Space>
       </div>
+
+      <Alert
+        type="info"
+        showIcon
+        message={
+          <Space wrap size={8}>
+            <Tag color="blue">地块 {orchards.length}</Tag>
+            <Tag color="cyan">蜂群 {colonies.length} 群</Tag>
+            <Tag>投放点 {dropPoints.length} 个</Tag>
+            <Tag color="orange">建议箱数合计 {totalSuggest}</Tag>
+            <Tag color={totalCapacity >= totalSuggest ? 'green' : 'red'}>投放点容量合计 {totalCapacity}</Tag>
+            <Tag>已存班次 {shifts.length}</Tag>
+          </Space>
+        }
+      />
 
       {conflicts.length > 0 ? (
         <Alert
@@ -156,8 +213,18 @@ export default function SchedulePage(): JSX.Element {
           }
         />
       ) : (
-        <Alert type="success" showIcon message="当前排程无蜂群冲突" />
+        <Alert type="success" showIcon message="当前投放点群号安排无花期重叠冲突" />
       )}
+
+      {shifts.length > 0 ? (
+        <Card size="small" title={`授粉班次（${shifts.length}）· 按班次显示经停投放点与箱数`}>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {shifts.map((shift) => (
+              <SavedShiftCard key={shift.id} shift={shift} orchards={orchards} dropPoints={dropPoints} />
+            ))}
+          </Space>
+        </Card>
+      ) : null}
 
       <Row gutter={16}>
         <Col xs={24} xl={14}>
@@ -167,6 +234,7 @@ export default function SchedulePage(): JSX.Element {
                 <FlowerWindowBar orchard={row.orchard} others={orchards.filter((item) => item.id !== row.orchard.id)} width={420} />
                 <Space wrap size={4} style={{ marginTop: 6 }}>
                   <Tag>建议 {row.suggest} 箱</Tag>
+                  <Tag color={row.capacity >= row.suggest ? 'green' : 'red'}>容量 {row.capacity} 箱</Tag>
                   <Tag color="blue">花期 {row.days} 天</Tag>
                   <Tag color={row.orchard.accessibility === '大车可达' ? 'green' : row.orchard.accessibility === '仅小车' ? 'gold' : 'red'}>
                     {row.orchard.accessibility}
@@ -190,7 +258,7 @@ export default function SchedulePage(): JSX.Element {
         </Col>
       </Row>
 
-      <Card size="small" title={`各地块排程明细（建议箱数合计 ${totalSuggest} 箱）`}>
+      <Card size="small" title={`各地块排程明细（建议箱数合计 ${totalSuggest} 箱 / 容量 ${totalCapacity} 箱）`}>
         <Table<ScheduleRow>
           dataSource={rows}
           rowKey="key"
@@ -205,8 +273,15 @@ export default function SchedulePage(): JSX.Element {
               key: 'bloom',
               render: (_, record: ScheduleRow) => `${record.orchard.bloomStart} ~ ${record.orchard.bloomEnd}`
             },
-            { title: '花期天数', dataIndex: 'days', key: 'days', width: 100 },
-            { title: '建议箱数', dataIndex: 'suggest', key: 'suggest', width: 100 },
+            { title: '花期天数', dataIndex: 'days', key: 'days', width: 90 },
+            { title: '建议箱数', dataIndex: 'suggest', key: 'suggest', width: 90 },
+            {
+              title: '投放点容量',
+              dataIndex: 'capacity',
+              key: 'capacity',
+              width: 100,
+              render: (value: number, record) => <Tag color={value >= record.suggest ? 'green' : 'red'}>{value} 箱</Tag>
+            },
             {
               title: '投放点',
               key: 'drops',
@@ -225,24 +300,50 @@ export default function SchedulePage(): JSX.Element {
               title: '状态',
               key: 'status',
               width: 120,
-              render: (_, record: ScheduleRow) =>
-                record.conflicted ? <Tag color="red">冲突</Tag> : <Tag color="green">正常</Tag>
+              render: (_, record: ScheduleRow) => (record.conflicted ? <Tag color="red">冲突</Tag> : <Tag color="green">正常</Tag>)
             }
           ]}
         />
       </Card>
 
-      <Card size="small" title="蜂群当前状态">
+      <Card size="small" title={`蜂群当前状态（${colonies.length} 群，状态随班次保存同步变化）`}>
         <Space wrap>
           {colonies.map((colony) => (
-            <StatusTag
-              key={colony.id}
-              status={colony.status}
-              hint={colony.currentOrchardId ? orchardName(colony.currentOrchardId) : '未分配地块'}
-            />
+            <StatusTag key={colony.id} status={colony.status} hint={colony.currentOrchardId ? orchardName(colony.currentOrchardId) : '未分配地块'} />
           ))}
         </Space>
       </Card>
+
+      <Modal
+        title="生成授粉班次 · 作业参数"
+        open={optionOpen}
+        onCancel={() => setOptionOpen(false)}
+        onOk={generatePlan}
+        okText="开始排班"
+        cancelText="取消"
+      >
+        <Form layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item label="车辆类型">
+            <Select value={vehicleType} onChange={(value) => setVehicleType(value)} options={VEHICLE_TYPES.map((item) => ({ value: item, label: item }))} />
+          </Form.Item>
+          <Form.Item label="首站出发时刻（各花期班次均按此时刻从首站发车）">
+            <DatePicker showTime value={departAt} onChange={(value) => setDepartAt(value ?? dayjs().hour(6).minute(30))} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="途中风险备注（写入各班次转场段）">
+            <Input value={riskNote} onChange={(event) => setRiskNote(event.target.value)} placeholder="如 西沟坡道窄，雨天泥泞" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <GenerateShiftModal
+        open={previewOpen}
+        drafts={drafts}
+        orchards={orchards}
+        colonies={colonies}
+        onCancel={() => setPreviewOpen(false)}
+        onConfirm={() => void confirmPlan()}
+        confirmLoading={saving}
+      />
     </div>
   )
 }

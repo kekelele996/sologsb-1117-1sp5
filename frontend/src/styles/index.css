@@ -74,6 +74,48 @@ body {
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.saved-shift-card,
+.shift-draft-card {
+  border: 1px solid #e6ecf1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.shift-draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.shift-stop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shift-stop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px dashed #cfd9e2;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.shift-stop-meta {
+  color: #7f8d82;
+  font-size: 12px;
+}
+.shift-block-list {
+  border-top: 1px dashed #f0c2bd;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 
 @media print {
   .ant-layout-sider,

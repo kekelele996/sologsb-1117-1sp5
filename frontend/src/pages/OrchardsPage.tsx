@@ -142,7 +142,7 @@ export default function OrchardsPage(): JSX.Element {
       shade: '',
       waterDistance: 300,
       dropWindow: dayjs(orchard.bloomStart).subtract(1, 'day'),
-      withdrawTime: dayjs(orchard.bloomEnd).add(1, 'day'),
+      withdrawTime: dayjs(orchard.bloomEnd),
       owner: '',
       colonyCodes: []
     })

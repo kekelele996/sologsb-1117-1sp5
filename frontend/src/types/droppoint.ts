@@ -20,4 +20,6 @@ export interface DropPoint {
   owner: string
   /** 该投放点安排的群号（用于冲突判定） */
   colonyCodes: string[]
+  /** 由哪个授粉班次写入群号（班次重排时据此回退） */
+  managedByShift?: string
 }
