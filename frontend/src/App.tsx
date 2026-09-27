@@ -5,6 +5,7 @@ import { orchardStore } from '@/stores/orchardStore'
 import { colonyStore } from '@/stores/colonyStore'
 import { droppointStore } from '@/stores/droppointStore'
 import { routeStore } from '@/stores/routeStore'
+import { shiftStore } from '@/stores/shiftStore'
 
 const { Sider, Header, Content } = Layout
 
@@ -22,6 +23,7 @@ export default function AppLayout(): JSX.Element {
   const colonies = usePersistentStore(colonyStore, (state) => state.rows)
   const dropPoints = usePersistentStore(droppointStore, (state) => state.rows)
   const routes = usePersistentStore(routeStore, (state) => state.rows)
+  const shifts = usePersistentStore(shiftStore, (state) => state.rows)
 
   const totalKm = Math.round(routes.reduce((sum, item) => sum + item.distanceKm, 0) * 100) / 100
 
@@ -47,6 +49,7 @@ export default function AppLayout(): JSX.Element {
         <div style={{ padding: 16 }}>
           <Statistic title={<span style={{ color: '#a9b3ad', fontSize: 12 }}>已入册地块</span>} value={orchards.length} valueStyle={{ color: '#f2c14e' }} />
           <Statistic title={<span style={{ color: '#a9b3ad', fontSize: 12 }}>蜂群 / 投放点</span>} value={`${colonies.length} / ${dropPoints.length}`} valueStyle={{ color: '#f2c14e', fontSize: 18 }} />
+          <Statistic title={<span style={{ color: '#a9b3ad', fontSize: 12 }}>已排班次</span>} value={shifts.length} valueStyle={{ color: '#f2c14e', fontSize: 18 }} />
           <Statistic title={<span style={{ color: '#a9b3ad', fontSize: 12 }}>转场里程合计</span>} value={`${totalKm} km`} valueStyle={{ color: '#f2c14e', fontSize: 18 }} />
           <Typography.Paragraph style={{ color: '#7f8d82', fontSize: 11, marginTop: 12, marginBottom: 0 }}>
             数据保存在浏览器 IndexedDB，无需后端服务

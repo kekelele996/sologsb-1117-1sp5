@@ -20,4 +20,6 @@ export interface TransitRoute {
   riskNote: string
   /** 实际转场记录 */
   actualNote: string
+  /** 生成该路段的授粉班次 id（手动规划的路段为空） */
+  shiftId?: string
 }

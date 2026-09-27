@@ -1,22 +1,23 @@
 import { useStore } from 'zustand'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import Dexie, { type Table } from 'dexie'
-import type { BeeColony, DropPoint, Orchard, TransitRoute } from '@/types'
+import type { BeeColony, DropPoint, Orchard, ShiftTask, TransitRoute } from '@/types'
 
 /** IndexedDB 数据结构版本号 */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MetaRow {
   key: string
   value: number
 }
 
-/** Dexie 封装：果园 / 蜂群 / 投放点 / 转场路线 四张表 + 元数据表 */
+/** Dexie 封装：果园 / 蜂群 / 投放点 / 转场路线 / 授粉班次 五张表 + 元数据表 */
 class BeeRouteDb extends Dexie {
   orchards!: Table<Orchard, string>
   colonies!: Table<BeeColony, string>
   dropPoints!: Table<DropPoint, string>
   routes!: Table<TransitRoute, string>
+  shifts!: Table<ShiftTask, string>
   meta!: Table<MetaRow, string>
 
   constructor() {
@@ -47,6 +48,11 @@ class BeeRouteDb extends Dexie {
             }
           })
       })
+    // v3：新增授粉班次表 shifts；转场路线可关联生成它的班次（shiftId）
+    this.version(SCHEMA_VERSION).stores({
+      shifts: 'id, date',
+      routes: 'id, fromDropId, toDropId, departAt, shiftId'
+    })
   }
 }
 
@@ -173,6 +179,28 @@ export async function seedDemoData(): Promise<void> {
       status: '待投放',
       lastCheckDate: `${year}-04-02`,
       healthNote: '新分群，群势偏弱'
+    },
+    {
+      id: 'col_004',
+      code: 'Q-04',
+      species: '意蜂',
+      strengthFrames: 7,
+      boxType: '标准继箱',
+      currentOrchardId: '',
+      status: '待投放',
+      lastCheckDate: `${year}-04-06`,
+      healthNote: '越冬后恢复良好，可直接投放'
+    },
+    {
+      id: 'col_005',
+      code: 'Q-05',
+      species: '中蜂',
+      strengthFrames: 5,
+      boxType: '平箱',
+      currentOrchardId: '',
+      status: '待投放',
+      lastCheckDate: `${year}-04-06`,
+      healthNote: '新王群，投放后注意查王'
     }
   ])
 
@@ -187,9 +215,23 @@ export async function seedDemoData(): Promise<void> {
       shade: '北侧有防风林，午后半阴',
       waterDistance: 220,
       dropWindow: `${year}-04-07`,
-      withdrawTime: `${year}-04-19`,
+      withdrawTime: `${year}-04-18`,
       owner: '周园主',
       colonyCodes: ['Q-01']
+    },
+    {
+      id: 'dp_a02',
+      orchardId: 'orc_ap',
+      longitude: 107.4161,
+      latitude: 34.6115,
+      code: 'A-02',
+      capacityBoxes: 6,
+      shade: '东侧灌丛遮阴',
+      waterDistance: 150,
+      dropWindow: `${year}-04-07`,
+      withdrawTime: `${year}-04-17`,
+      owner: '周园主',
+      colonyCodes: []
     },
     {
       id: 'dp_b01',

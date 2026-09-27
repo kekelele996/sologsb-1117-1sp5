@@ -66,13 +66,14 @@ sologsb-1117/
 │   ├── nginx.conf              # try_files 前端路由回落 + gzip
 │   ├── public/favicon.svg
 │   └── src/
-│       ├── types/              # orchard.ts / colony.ts / droppoint.ts / route.ts / index.ts
-│       ├── stores/             # orchardStore / colonyStore / droppointStore / routeStore（Zustand）
+│       ├── types/              # orchard.ts / colony.ts / droppoint.ts / route.ts / shift.ts / index.ts
+│       ├── stores/             # orchardStore / colonyStore / droppointStore / routeStore / shiftStore（Zustand）
 │       ├── components/common/  # RouteMap / FlowerWindowBar / StatusTag / CoordPicker
+│       ├── components/shifts/  # ShiftBoard（授粉班次：生成 / 拦截明细 / 拖动重排）
 │       ├── hooks/              # useAmap / usePersistentStore
 │       ├── pages/              # SchedulePage / OrchardsPage / ColoniesPage / RoutesPage / ExportPage
 │       ├── router/index.tsx
-│       └── utils/              # geo.ts / export.ts / id.ts
+│       └── utils/              # geo.ts / shift.ts / export.ts / id.ts
 ```
 
 ## 六、数据模型与存储
@@ -82,17 +83,19 @@ sologsb-1117/
 | Orchard 果园地块 | 地块名、作物、面积、经纬度、盛花期起止、需蜂强度（箱/亩）、园主联系方式、可达性、历史授粉年份 | `orchards` |
 | BeeColony 蜂群 | 群号、蜂种、群势（足框）、箱型、当前所在地块、状态（待投放/在园/转场中/回场）、最近检查日期、健康备注 | `colonies` |
 | DropPoint 投放点 | 所属地块、坐标、编号、可容纳箱数、遮阴条件、水源距离、投放时间窗、撤场时间、责任人、安排群号 | `dropPoints` |
-| TransitRoute 转场路线 | 出发/到达投放点、预计里程与耗时、车辆类型、出发时刻、风险备注、实际记录 | `routes` |
+| TransitRoute 转场路线 | 出发/到达投放点、预计里程与耗时、车辆类型、出发时刻、风险备注、实际记录、来源班次 | `routes` |
+| ShiftTask 授粉班次 | 班次名、执行日期、首站出发时刻、车辆、经停投放点（含各站箱数与群号）、备注 | `shifts` |
 
 - 数据库名 `gbbeeroute`，`meta` 表保存 `schemaVersion`；
 - `version(2)` 升级迁移会为历史投放点补齐「可容纳箱数」（默认 8 箱）；
+- `version(3)` 新增授粉班次表 `shifts`，转场路线可关联生成它的班次（`shiftId`）；
 - 数据仅存于浏览器本地，容器无状态、不挂载命名卷。
 
 ## 七、主要页面
 
 | 路由 | 功能 |
 | --- | --- |
-| `/` | 季内授粉安排总表：花期条带 + 已投放群体，冲突（同一蜂群被排入花期重叠的不同地块）标红并汇总 |
+| `/` | 季内授粉安排总表：花期条带 + 已投放群体，冲突标红汇总；「生成授粉班次」按建议箱数 / 投放点容量 / 可用蜂群排出班次草稿，花期重叠、超容、撤场晚于花期结束的安排明确拦下；保存后按班次显示经停投放点与箱数，蜂群状态与转场路线同步更新，拖动站点顺序实时重算里程与预计到达时刻 |
 | `/orchards` | 果园地块管理：面积与需蜂强度自动算建议箱数、可达性标记、花期重叠提示、投放点维护（含坐标拾取） |
 | `/colonies` | 蜂群台账：按群势与状态筛选，批量改状态、批量记录检查备注 |
 | `/routes` | 转场路线规划：地图依次选点生成顺序与里程，拖动或上下移动调整顺序并实时重算，写回路线表 |
@@ -102,4 +105,7 @@ sologsb-1117/
 
 - 建议箱数 = ⌈面积(亩) × 需蜂强度(箱/亩)⌉，最少 1 箱；
 - 转场里程按 Haversine 球面距离累计，耗时按平均 32 km/h + 0.25 h 装卸估算；
-- 花期重叠：两地块盛花期区间交集天数 ≥ 1 即视为重叠；同一群号在重叠期内被排入两个地块 → 冲突。
+- 花期重叠：两地块盛花期区间交集天数 ≥ 1 即视为重叠；同一群号在重叠期内被排入两个地块 → 冲突；
+- 班次生成：每块地一个班次，仅「待投放 / 回场」蜂群参与、按群势从强到弱分配，各站箱数不超过投放点剩余容量；同一群被分到花期重叠地块、投放点超容、撤场晚于花期结束的安排一律拦下，不随班次保存；
+- 班次保存：投放点写入安排群号、蜂群状态同步为「在园」并指向经停地块、相邻经停站生成转场段；删除班次会回滚上述写入；
+- 班次预计到达时刻：首站为出发时刻，后续站 = 上一站到达时刻 + 该段耗时；拖动站点顺序或修改出发时刻后里程与到达时刻实时重算并写回路线表。

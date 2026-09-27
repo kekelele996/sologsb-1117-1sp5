@@ -4,6 +4,7 @@ import type { BeeColony, DropPoint, Orchard } from '@/types'
 import FlowerWindowBar from '@/components/common/FlowerWindowBar'
 import RouteMap from '@/components/common/RouteMap'
 import StatusTag from '@/components/common/StatusTag'
+import ShiftBoard from '@/components/shifts/ShiftBoard'
 import { usePersistentStore } from '@/hooks/usePersistentStore'
 import { orchardStore } from '@/stores/orchardStore'
 import { colonyStore } from '@/stores/colonyStore'
@@ -126,7 +127,7 @@ export default function SchedulePage(): JSX.Element {
         <div>
           <h2 className="page-title">季内授粉安排总表</h2>
           <p className="page-sub">
-            按日期条带展示各地块盛花期与已投放群体；同一蜂群在同一天被排入花期重叠的两个地块时进入冲突列表并标红。
+            按日期条带展示各地块盛花期与已投放群体；同一蜂群在同一天被排入花期重叠的两个地块时进入冲突列表并标红。点「生成授粉班次」可按建议箱数、投放点容量与可用蜂群排出可执行任务。
           </p>
         </div>
         <Segmented
@@ -158,6 +159,8 @@ export default function SchedulePage(): JSX.Element {
       ) : (
         <Alert type="success" showIcon message="当前排程无蜂群冲突" />
       )}
+
+      <ShiftBoard />
 
       <Row gutter={16}>
         <Col xs={24} xl={14}>

@@ -14,6 +14,10 @@ export interface RouteState {
     orderedDropIds: string[],
     meta: { vehicleType: TransitRoute['vehicleType']; departAt: string; riskNote: string }
   ) => Promise<void>
+  /** 用班次生成的转场段整体替换该班次的旧段（拖动站点 / 改出发时刻后重算） */
+  replaceShiftLegs: (shiftId: string, legs: TransitRoute[]) => Promise<void>
+  /** 删除某班次生成的全部转场段 */
+  removeByShift: (shiftId: string) => Promise<void>
 }
 
 export const routeStore = create<RouteState>((set, get) => ({
@@ -33,8 +37,9 @@ export const routeStore = create<RouteState>((set, get) => ({
     await get().hydrate()
   },
   rebuildFromOrder: async (orderedDropIds, meta) => {
+    // 仅清理手动规划的路段，保留授粉班次生成的路段（shiftId 非空）
     const existing = await loadAll<TransitRoute>(db.routes)
-    await Promise.all(existing.map((row) => deleteRow<TransitRoute>(db.routes, row.id)))
+    await Promise.all(existing.filter((row) => !row.shiftId).map((row) => deleteRow<TransitRoute>(db.routes, row.id)))
     const points = await loadAll<{ id: string; longitude: number; latitude: number }>(db.dropPoints)
     const lookup = new Map(points.map((item) => [item.id, item]))
     for (let i = 1; i < orderedDropIds.length; i += 1) {
@@ -54,6 +59,17 @@ export const routeStore = create<RouteState>((set, get) => ({
         actualNote: '待执行'
       })
     }
+    await get().hydrate()
+  },
+  replaceShiftLegs: async (shiftId, legs) => {
+    const existing = await loadAll<TransitRoute>(db.routes)
+    await Promise.all(existing.filter((row) => row.shiftId === shiftId).map((row) => deleteRow<TransitRoute>(db.routes, row.id)))
+    await Promise.all(legs.map((leg) => putRow<TransitRoute>(db.routes, leg)))
+    await get().hydrate()
+  },
+  removeByShift: async (shiftId) => {
+    const existing = await loadAll<TransitRoute>(db.routes)
+    await Promise.all(existing.filter((row) => row.shiftId === shiftId).map((row) => deleteRow<TransitRoute>(db.routes, row.id)))
     await get().hydrate()
   }
 }))

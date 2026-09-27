@@ -8,6 +8,7 @@ import { usePersistentStore } from '@/hooks/usePersistentStore'
 import { orchardStore } from '@/stores/orchardStore'
 import { droppointStore } from '@/stores/droppointStore'
 import { routeStore } from '@/stores/routeStore'
+import { shiftStore } from '@/stores/shiftStore'
 import { distanceKm, estimateDurationH, routeLegs } from '@/utils/geo'
 
 /** 转场路线规划：地图上依次选点生成顺序与里程，支持拖动调整顺序并重算 */
@@ -15,6 +16,7 @@ export default function RoutesPage(): JSX.Element {
   const orchards = usePersistentStore(orchardStore, (state) => state.rows)
   const dropPoints = usePersistentStore(droppointStore, (state) => state.rows)
   const routes = usePersistentStore(routeStore, (state) => state.rows)
+  const shifts = usePersistentStore(shiftStore, (state) => state.rows)
 
   const [orderedIds, setOrderedIds] = useState<string[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -221,6 +223,16 @@ export default function RoutesPage(): JSX.Element {
             { title: '预计耗时（h）', dataIndex: 'durationH', key: 'hour', width: 130 },
             { title: '车辆', dataIndex: 'vehicleType', key: 'vehicle', width: 110 },
             { title: '出发时刻', dataIndex: 'departAt', key: 'depart', width: 160 },
+            {
+              title: '班次',
+              key: 'shift',
+              width: 170,
+              render: (_, record: TransitRoute) => {
+                if (!record.shiftId) return '—'
+                const shift = shifts.find((item) => item.id === record.shiftId)
+                return <Tag color="purple">{shift ? shift.name : '班次已删除'}</Tag>
+              }
+            },
             { title: '风险备注', dataIndex: 'riskNote', key: 'risk', render: (value: string) => value || '—' },
             { title: '实际记录', dataIndex: 'actualNote', key: 'actual', width: 120 },
             {
